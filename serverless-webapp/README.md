@@ -1,5 +1,5 @@
-This is a take on the Cloud Resume Challenge.  I created the app through Infra as Code using CDK.  Deploying this will create a static web application using Cloudfront, S3, Lambda, DynamoDB,
-where you can add your html/js files to show your resume, Github, Linkedin pages.
+This is a take on the Cloud Resume Challenge.  I created the app through Infra as Code using CDK. Simply deploying this cdk will create a static web application using Cloudfront, S3, Lambda, DynamoDB,
+where you can add your html/js files to show your resume, Github, Linkedin pages.  
 
 
 
