@@ -1,4 +1,4 @@
-
+This is an automeated SLack/Teams bot that updates the channel of your choice with daily pipeline failures. 
 # Welcome to your CDK Python project!
 
 This is a blank project for CDK development with Python.
