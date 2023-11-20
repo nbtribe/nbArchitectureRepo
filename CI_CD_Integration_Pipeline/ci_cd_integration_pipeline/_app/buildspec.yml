@@ -1,0 +1,31 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.9
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $IMAGE_REPO_URI
+  build:
+    commands:
+      - cd ./absorb_lms_integration_pipeline/_app/
+      - echo Build started on `date`
+      - echo Building the Docker image...
+      - docker build -t $IMAGE_REPO_NAME .
+      - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $IMAGE_REPO_URI:$IMAGE_TAG 
+
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Pushing the Docker image...
+      - docker push $IMAGE_REPO_URI:$IMAGE_TAG
+
+
+# $IMAGE_REPO_URI = 625543658497.dkr.ecr.us-east-1.amazonaws.com
+# $IMAGE_REPO_NAME= devopspipelinenbstack-ecrrepo714fb1b2-iaeuhg6lumii
+# $IMAGE_TAG = latest
+# 
+
+# docker tag devopspipelinenbstack-ecrrepo714fb1b2-dtdonu3bieky:latest 625543658497.dkr.ecr.us-east-1.amazonaws.com/devopspipelinenbstack-ecrrepo714fb1b2-dtdonu3bieky:latest
