@@ -1,0 +1,15 @@
+in Windows CMDPrompt
+--Create the VPC
+aws ec2 create-vpc --cidr-block 10.0.0.0/22 --region us-east-1 --tag-specifications ResourceType=vpc,Tags=[{Key=Name,Value=DemoVPC2}]
+--Create the IGW
+aws ec2 create-internet-gateway --region us-east-1 --tag-specifications ResourceType=internet-gateway,Tags=[{Key=Name,Value=Demo-IGW-2}]
+--Attach IGW to VPC
+aws ec2 attach-internet-gateway --region us-east-1 --internet-gateway-id igw-08768aa923d06c762 --vpc-id vpc-0b3d2c840db5d3507
+--Create subnet
+aws ec2 create-subnet --region us-east-1 --tag-specifications ResourceType=subnet,Tags=[{Key=Name,Value=PublicSubnetDemoVPC2}] --availability-zone us-east-1a --cidr-block 10.0.0.0/25 --vpc-id vpc-0b3d2c840db5d3507
+--Create Route Table
+aws ec2 create-route-table --region us-east-1 --vpc-id vpc-0b3d2c840db5d3507 --tag-specifications ResourceType=route-table,Tags=[{Key=Name,Value=DemoVPC2PublicRouteTable}]
+--Create Route to IGW
+aws ec2 create-route --region us-east-1 --destination-cidr-block 0.0.0.0/0 --gateway-id igw-08768aa923d06c762 --route-table-id rtb-010d0da7bfae39637
+--Associate route Table with Subnet to make the Subnet Public(So it can reach the Internet)
+aws ec2 associate-route-table --region us-east-1 --route-table-id rtb-010d0da7bfae39637 --subnet-id subnet-0b2e55d5f9e3de07b
