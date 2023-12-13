@@ -1,72 +1,156 @@
+import os
 from aws_cdk import (
-    # Duration,
     Stack,
+    aws_dynamodb as dynamodb_,
+    aws_lambda as lambda_,
+    aws_apigateway as apigw_,
+    aws_ec2 as ec2,
     aws_iam as iam,
-    aws_pinpoint as pinpoint,
-    aws_lambda as _lambda,
-    aws_apigateway as apigateway,
-    aws_events as events,
     aws_scheduler as scheduler,
-    # aws_scheduler_alpha as _aschedule,
-    
-    
 
+
+    
+    Duration,
 )
 from constructs import Construct
+
+TABLE_NAME = "lawncare-contacts-table"
 
 class ServerlessLawncareAppStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
         
-        # PINPOINT
         
-        pinpoint_app = pinpoint.CfnApp(self, "PinpointApp", 
-                                           name="KTI SMS"
+        # Create the send Lambda
+        send_lambda = lambda_.Function(self, "send_lambda_function",
+                                       runtime=lambda_.Runtime.PYTHON_3_10,
+                                       handler="send.handler",
+                                       code=lambda_.Code.from_asset("lambda"),
+                                       role=iam.Role(self, "send_lambda_role",
+                                                     assumed_by=iam.ServicePrincipal(
+                                                         "lambda.amazonaws.com"),
+                                                     managed_policies=[
+                                                         iam.ManagedPolicy.from_aws_managed_policy_name(
+                                                             "service-role/AWSLambdaBasicExecutionRole"
+                                                         )
+                                                     ]
+                                                     )
+                                       environment={
+                                           "TOPIC_ARN": SNS_TOPIC_ARN,
+                                       }
+                                       )
+        # Lambda Role
+        send_lambda.add_to_role_policy(iam.PolicyStatement(
+            effect=iam.Effect.ALLOW,
+            actions=["sns:Publish"],
+            resources=[SNS_TOPIC_ARN]
+            
+        
+        # create a role and a policy to allow running associations
+        schedulerRole = iam.Role(self, 'lawn-care-scheduler-role',
+            assumed_by=iam.ServicePrincipal('scheduler.amazonaws.com'))
+        
+        # add policy to role
+        schedulerRole.add_to_policy(iam.PolicyStatement(
+            effect=iam.Effect.ALLOW,
+            actions=["lambda:InvokeFunction"]
+            resources=[lambda_function.function_arn]
+
+        
+        # schedule to run every Sunday at 2:00am
+        schedule = scheduler.CfnSchedule(self, 'run-command',
+            flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(
+                mode="OFF"
+            ),
+            schedule_expression='cron(0 2 ? * SUN *)',
+            target=scheduler.CfnSchedule.TargetProperty(
+                    arn='arn:aws:scheduler:::aws-sdk:ssm:startAssociationsOnce',
+                    role_arn=schedulerRole.role_arn,
+                    input=json.dumps({"AssociationIds": [cfnAssociation.attr_association_id]})
+            )
         )
-        #  Add email channel to pinpoint app
-        cfn_email_channel = pinpoint.CfnEmailChannel(self, "EmailChannel",
-            application_id=pinpoint_app.ref,
-            from_address="no-reply@trybegenapi.link",
-            identity="arn:aws:ses:us-east-1:625543658497:identity/trybegenapi.link",
-            # the properties below are optional
-            enabled=True,
-            # role_arn="roleArn"
-        )
-
-        #  Add SNS channel to pinpoint app
-        cfn_sms_channel = pinpoint.CfnSMSChannel(self, "SMSChannel",
-            application_id=pinpoint_app.ref,
-            enabled=True,
-            sender_id="TrybeGenAPI",
-            short_code="shortCode"
-        )
 
 
-        target_lambda = _lambda.Function(self, "target_lambda",
-                                         runtime=_lambda.Runtime.PYTHON_3_9,
-                                         code=_lambda.Code.from_asset("lambda"),
-                                         handler="lambda.handler",
-                                         )
 
 
-        jan_schedule = scheduler.CfnSchedule(self, "jan_schedule",
-                                             flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(
-                                                 mode="OFF",),
-                                             schedule_expression="cron(00 10 25 1 ? *)",
+        # # VPC
+        # vpc = ec2.Vpc(
+        #     self,
+        #     "Ingress",
+        #     ip_addresses="10.1.0.0/16",
+        #     subnet_configuration=[
+        #         ec2.SubnetConfiguration(
+        #             name="Private-Subnet", subnet_type=ec2.SubnetType.PRIVATE_ISOLATED,
+        #             cidr_mask=24
+        #         )
+        #     ],
+        # )
+        
+        # # Create VPC endpoint
+        # dynamo_db_endpoint = ec2.GatewayVpcEndpoint(
+        #     self,
+        #     "DynamoDBVpce",
+        #     service=ec2.GatewayVpcEndpointAwsService.DYNAMODB,
+        #     vpc=vpc,
+        # )
 
-                                            
-        )
+        # # This allows to customize the endpoint policy
+        # dynamo_db_endpoint.add_to_policy(
+        #     iam.PolicyStatement(  # Restrict to listing and describing tables
+        #         principals=[iam.AnyPrincipal()],
+        #         actions=[                "dynamodb:DescribeStream",
+        #         "dynamodb:DescribeTable",
+        #         "dynamodb:Get*",
+        #         "dynamodb:Query",
+        #         "dynamodb:Scan",
+        #         "dynamodb:CreateTable",
+        #         "dynamodb:Delete*",
+        #         "dynamodb:Update*",
+        #         "dynamodb:PutItem"],
+        #         resources=["*"],
+        #     )
+        # )
 
-#         target = targets.LambdaInvoke(fn,
-#             input=ScheduleTargetInput.from_object({
-#             "payload": "useful"
-#     })
-# )
-#         # EVENTBRIDGE Scheduler
-#         january_schedule = _aschedule.Sche(self,"Jan_Schedule",
-#                                       schedule =_aschedule.ScheduleExpression.cron(minute="0", hour="10",day="25", month="1", year="*" )
-#         )
+        # # Create DynamoDb Table
+        # demo_table = dynamodb_.Table(
+        #     self,
+        #     TABLE_NAME,
+        #     partition_key=dynamodb_.Attribute(
+        #         name="id", type=dynamodb_.AttributeType.STRING
+        #     ),
+        # )
+
+        # # Create the Lambda function to receive the request
+        # api_hanlder = lambda_.Function(
+        #     self,
+        #     "ApiHandler",
+        #     function_name="apigw_handler",
+        #     runtime=lambda_.Runtime.PYTHON_3_9,
+        #     code=lambda_.Code.from_asset("lambda"),
+        #     handler="index.handler",
+        #     vpc=vpc,
+        #     vpc_subnets=ec2.SubnetSelection(
+        #         subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
+        #     ),
+        #     memory_size=1024,
+        #     timeout=Duration.minutes(1),
+        # )
+
+        # # grant permission to lambda to write to contacts table
+        # demo_table.grant_write_data(api_hanlder)
+        # api_hanlder.add_environment("TABLE_NAME", demo_table.table_name)
+
+        # # Create API Gateway
+        # apigw_.LambdaRestApi(
+        #     self,
+        #     "Endpoint",
+        #     handler=api_hanlder,
+        # )
+
+
+
 
     
         
