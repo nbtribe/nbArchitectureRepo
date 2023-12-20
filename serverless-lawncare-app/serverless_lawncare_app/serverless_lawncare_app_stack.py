@@ -41,11 +41,14 @@ class ServerlessLawncareAppStack(Stack):
                                            "TOPIC_ARN": SNS_TOPIC_ARN,
                                        }
                                        )
+        
         # Lambda Role
         send_lambda.add_to_role_policy(iam.PolicyStatement(
             effect=iam.Effect.ALLOW,
             actions=["sns:Publish"],
             resources=[SNS_TOPIC_ARN]
+        )
+        )
             
         
         # create a role and a policy to allow running associations
