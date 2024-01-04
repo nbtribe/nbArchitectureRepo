@@ -1,0 +1,968 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Parameters:
+  StagingBucket:
+    Type: String
+    Default: 'nbarchitecture'
+  StagingPrefix:
+    Type: String
+    Default: 'stepfns/'
+  Username:
+    Type: String
+    Default: 'administrator'
+    NoEcho: 'true'
+  Password:
+    Type: String
+    Default: 'nbarch12345!'
+    NoEcho: 'true'
+    MinLength: 8
+  DBClass:
+    Type: String
+    Default: 'db.t3.micro'
+  DBAllocatedStorage:
+    Type: String
+    Default: '20'
+
+Resources:
+  ExportTablesFromRDS:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      RoleArn: !GetAtt StepFunctionsRole.Arn
+      StateMachineName: 'ETL-Process'
+      DefinitionSubstitutions:
+        LambdaPopulate: !Ref LambdaPopulateDB
+        SourceBucket: !Ref ExportS3Bucket
+      DefinitionString: |- 
+         {
+            "Comment": "A description of my state machine",
+            "StartAt": "StartCrawler",
+            "States": {
+                  "StartCrawler": {
+                    "Type": "Task",
+                    "Next": "GetCrawler",
+                    "Parameters": {
+                      "Name": "gluecrawler"
+                    },
+                    "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+                    "Catch": [
+                      {
+                        "ErrorEquals": [
+                          "Glue.CrawlerRunningException"
+                        ],
+                        "Comment": "catch running exception",
+                        "Next": "GetCrawler"
+                      }
+                    ]
+                  },
+                  "GetCrawler": {
+                    "Type": "Task",
+                    "Next": "Is Crawler Running?",
+                    "Parameters": {
+                      "Name": "gluecrawler"
+                    },
+                    "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler"
+                  },
+                  "Is Crawler Running?": {
+                    "Type": "Choice",
+                    "Choices": [
+                      {
+                        "Variable": "$.Crawler.State",
+                        "StringEquals": "RUNNING",
+                        "Next": "Wait 10 seconds"
+                      }
+                    ],
+                    "Default": "Parallel"
+                  },
+                  "Wait 10 seconds": {
+                    "Type": "Wait",
+                    "Seconds": 10,
+                    "Next": "GetCrawler"
+                  },
+              "Parallel": {
+                "Type": "Parallel",
+                "Branches": [
+                  {
+                    "StartAt": "Export data from DynamoDb",
+                    "States": {
+                      "Export data from DynamoDb": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::lambda:invoke",
+                        "OutputPath": "$.Payload",
+                        "Parameters": {
+                          "Payload.$": "$",
+                          "FunctionName": "${LambdaPopulate}"
+                        },
+                        "Retry": [
+                          {
+                            "ErrorEquals": [
+                              "Lambda.ServiceException",
+                              "Lambda.AWSLambdaException",
+                              "Lambda.SdkClientException",
+                              "Lambda.TooManyRequestsException"
+                            ],
+                            "IntervalSeconds": 1,
+                            "MaxAttempts": 3,
+                            "BackoffRate": 2
+                          }
+                        ],
+                        "End": true
+                      }
+                    }
+                  },
+                  {
+                    "StartAt": "Map",
+                    "States": {
+                      "Map": {
+                        "Type": "Map",
+                        "ItemProcessor": {
+                          "ProcessorConfig": {
+                            "Mode": "DISTRIBUTED",
+                            "ExecutionType": "STANDARD"
+                          },
+                          "StartAt": "Export data for a table",
+                          "States": {
+                            "Export data for a table": {
+                              "Type": "Task",
+                              "Resource": "arn:aws:states:::glue:startJobRun.sync",
+                              "Parameters": {
+                                "JobName": "ExportTableData",
+                                "Arguments": {
+                                  "--dbtable.$": "$.tables"
+                                }
+                              },
+                              "End": true
+                            }
+                          }
+                        },
+                        "Label": "Map",
+                        "ItemReader": {
+                          "Resource": "arn:aws:states:::s3:getObject",
+                          "ReaderConfig": {
+                            "InputType": "CSV",
+                            "CSVHeaderLocation": "FIRST_ROW"
+                          },
+                          "Parameters": {
+                            "Bucket": "${SourceBucket}",
+                            "Key": "tables.csv"
+                          }
+                        },
+                        "ResultPath": null,
+                        "End": true
+                      }
+                    }
+                  }
+                ],
+                "End": true
+              }
+            }
+            }
+
+  StepFunctionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: StepFunctionRole-blog
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - states.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+        - PolicyName: StepFunctions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                - s3:GetObject
+                - s3:ListBucket
+                - s3:DeleteObject
+                Resource: 
+                - !Sub "${ExportS3Bucket.Arn}"
+                - !Sub "${ExportS3Bucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                - states:StartExecution
+                - states:RedriveExecution
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                - lambda:InvokeFunction
+                Resource: !GetAtt LambdaPopulateDB.Arn
+              - Effect: Allow
+                Action:
+                - glue:StartJobRun
+                - glue:GetJobRun
+                - glue:GetJobRuns
+                - glue:BatchStopJobRun
+                Resource: !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:job/ExportTableData"
+              - Effect: Allow
+                Action:
+                - glue:StartCrawler
+                - glue:GetCrawler
+                Resource: !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:crawler/gluecrawler"
+
+
+  PubPrivateVPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: !Ref "AWS::StackName"
+ 
+  GlueEndpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcEndpointType: 'Interface'
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.glue'
+      VpcId: !Ref PubPrivateVPC
+      SubnetIds: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref RDSSecurityGroup
+ 
+  S3Endpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcEndpointType: 'Interface'
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcId: !Ref PubPrivateVPC
+      SubnetIds: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref RDSSecurityGroup
+
+  LogBuckets:
+    Type: Custom::LogBuckets
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+          - UploadLambda
+          - Arn
+      Buckets:
+        - !Ref StagingBucket
+      Prefix:
+        - !Ref StagingPrefix
+      AssetBucket:
+        - !Ref ExportS3Bucket
+  LoadRDS:
+    Type: Custom::LoadRDS
+    DependsOn: 
+      - RDSInstance
+      - S3Endpoint
+      - PrivateRouteTable
+      - GatewayToInternet
+      - InternetGateway
+      - NatGateway
+      - PrivateRoute
+      - PublicSubnet1
+      - PublicSubnet2
+      - PublicRoute
+      - PrivateSubnet1RouteTableAssociation
+      - PrivateSubnet2RouteTableAssociation
+      - PublicSubnet1RouteTableAssociation
+      - PublicSubnet2RouteTableAssociation
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+          - LoadRDSLambda
+          - Arn
+      Buckets:
+        - !Ref ExportS3Bucket
+      Region:
+        - !Ref AWS::Region
+      UserName:
+        - !Sub ${Username}  
+      Password:
+        - !Sub ${Password}
+      Host:
+        - !Sub ${RDSInstance.Endpoint.Address}      
+  Layer:
+    Type: AWS::Lambda::LayerVersion
+    DependsOn: 
+      - ExportS3Bucket
+      - LogBuckets
+    Properties:
+      CompatibleRuntimes:
+        - python3.8
+        - python3.9
+        - python3.11
+      Content:
+        S3Bucket: !Ref ExportS3Bucket
+        S3Key: layer.zip
+      Description: pg8000
+      LayerName: pg8000
+
+  LoadRDSLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: 
+      - RDSRole
+      - RDSInstance
+      - S3Endpoint
+      - PrivateRouteTable
+      - GatewayToInternet
+      - InternetGateway
+      - NatGateway
+      - PrivateRoute
+    Properties:
+      FunctionName: load-database
+      Handler: index.lambda_handler
+      Layers:
+        - !Ref Layer
+      VpcConfig:
+        SecurityGroupIds:
+          - !GetAtt RDSSecurityGroup.GroupId
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Role:
+        Fn::GetAtt:
+        - LoadRDSLambdaRole
+        - Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import pg8000.native
+          import pg8000
+          import botocore
+          import cfnresponse
+          import time
+              
+          def lambda_handler(event, context):
+            bucket = event['ResourceProperties']['Buckets']
+            bucket = bucket[0]
+            region = event['ResourceProperties']['Region']
+            region = region[0]
+            username = event['ResourceProperties']['UserName']
+            username = username[0]
+            password = event['ResourceProperties']['Password']
+            password = password[0]
+            host = event['ResourceProperties']['Host']
+            host = host[0]
+            if event['RequestType'] == 'Create':
+              try:
+                time.sleep(180)
+                db = 'salesdb'
+                con = pg8000.native.Connection(user=username, host=host, port=5432, database=db, password=password, ssl_context=True)
+                con.run("CREATE TABLE IF NOT EXISTS leaddata(leadsource varchar(120),jobrole varchar(120),contactnotes varchar(256),leadprofile varchar(256),usedpromo varchar(256),donotreachout boolean,region varchar(20),converted int,prospectid varchar(120) primary key)")
+                con.run("CREATE TABLE IF NOT EXISTS webdata(webidentity int primary key,prospectid varchar(120),lastcampaignactivity varchar(120),pageviewspervisit numeric(20,2),totaltimeonwebsite int,totalwebsitevisits int,attendedmarketingevents varchar(120),organicsearch varchar(120),viewedadvertisement varchar(120))")
+                con.run("CREATE TABLE IF NOT EXISTS customer(ID int primary key,Name varchar(120),phonenumber varchar(120))")
+                con.run("CREATE TABLE IF NOT EXISTS ordertable(ID int primary key,customer_id int)")
+                con.run("CREATE TABLE IF NOT EXISTS orderitem(ID int primary key,order_id int, product_id int, quantity int)")
+                con.run("CREATE EXTENSION aws_s3 CASCADE")
+                con.run("SELECT aws_s3.table_import_from_s3('leaddata', 'LeadSource,JobRole,ContactNotes,LeadProfile,UsedPromo,DoNotReachOut,Region,Converted,ProspectID', '(format csv, header true)', '" + bucket + "','LeadData.csv','" + region + "')")
+                con.run("SELECT aws_s3.table_import_from_s3('webdata', 'WebIdentity,ProspectID,LastCampaignActivity,PageViewsPerVisit,TotalTimeOnWebsite,TotalWebsiteVisits,AttendedMarketingEvents,OrganicSearch,ViewedAdvertisement', '(format csv, header true)', '" + bucket + "','WebMarketingData.csv','" + region + "')")
+                con.run("SELECT aws_s3.table_import_from_s3('customer', 'ID,Name,phonenumber', '(format csv, header true)', '" + bucket + "','customer.csv','" + region + "')")
+                con.run("SELECT aws_s3.table_import_from_s3('ordertable', 'ID,customer_id', '(format csv, header true)', '" + bucket + "','ordertable.csv','" + region + "')")
+                con.run("SELECT aws_s3.table_import_from_s3('orderitem', 'ID,order_id,product_id,quantity', '(format csv, header true)', '" + bucket + "','orderitem.csv','" + region + "')")
+                con.close()
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "CustomResourcePhysicalID")  
+              except Exception as other_err:
+                print(other_err)
+                cfnresponse.send(event, context, cfnresponse.FAILED, {}, "CustomResourcePhysicalID")
+              except pg8000.core.DatabaseError:
+                #cfnresponse.send(event, context, cfnresponse.FAILED, {}, "CustomResourcePhysicalID
+                raise Exception
+            if event['RequestType'] == 'Delete':
+              try:
+                print("skipping")
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "CustomResourcePhysicalID")  
+              except Exception as other_err:
+                print(other_err)
+                cfnresponse.send(event, context, cfnresponse.FAILED, {}, "CustomResourcePhysicalID") 
+      Runtime: python3.8
+      Timeout: 600    
+
+  LoadRDSLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LoadRDSRole
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+        - PolicyName: UploadLambdaRoleExecutionRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+  UploadLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: upload-files
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+        - UploadLambdaRole
+        - Arn
+      Code:
+        ZipFile: |
+          import boto3
+          import botocore
+          import json
+          import cfnresponse
+          import urllib
+          import urllib3
+          s3 = boto3.resource('s3')
+          s3client = boto3.client('s3')
+          def handler(event, context):
+            print(event)
+            if event['RequestType'] == 'Delete':
+                try:
+                  bucket1 = event['ResourceProperties']['AssetBucket']
+                  bucket2 = bucket1[0]
+                  r = s3.Bucket(bucket2).objects.delete()
+                  print("deleting objects")
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "CustomResourcePhysicalID")
+                except s3.meta.client.exceptions.NoSuchBucket as nobucket:
+                  print("Bucket {} does not exist".format(nobucket.response['Error']['BucketName']))
+                except Exception as other_err:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, "CustomResourcePhysicalID")
+                  raise(other_err) 
+            if event['RequestType'] == 'Create':
+                try:
+                  bucket = event['ResourceProperties']['Buckets']
+                  prefix = event['ResourceProperties']['Prefix']
+                  #s3client.download_file(bucket, 'BDB-3690/postgresql-42.6.0.jar', 'postgresql-42.6.0.jar')
+                  dest = event['ResourceProperties']['AssetBucket']
+                  destbucket = dest[0]
+                  print(destbucket)                 
+                  http=urllib3.PoolManager()
+
+                  urllib.request.urlopen('https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/postgresql-42.6.0.jar')   #Provide URL
+                  s3.meta.client.upload_fileobj(http.request('GET', 'https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/postgresql-42.6.0.jar', preload_content=False), destbucket, 'postgresql-42.6.0.jar')                  
+                  
+                  urllib.request.urlopen('https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/LeadData.csv')   #Provide URL
+                  s3.meta.client.upload_fileobj(http.request('GET', 'https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/LeadData.csv', preload_content=False), destbucket, 'LeadData.csv')                  
+
+                  urllib.request.urlopen('https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/WebMarketingData.csv')   #Provide URL
+                  s3.meta.client.upload_fileobj(http.request('GET', 'https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/WebMarketingData.csv', preload_content=False), destbucket, 'WebMarketingData.csv')        
+
+                  urllib.request.urlopen('https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/customer.csv')   #Provide URL
+                  s3.meta.client.upload_fileobj(http.request('GET', 'https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/customer.csv', preload_content=False), destbucket, 'customer.csv')        
+
+                  urllib.request.urlopen('https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/ordertable.csv')   #Provide URL
+                  s3.meta.client.upload_fileobj(http.request('GET', 'https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/ordertable.csv', preload_content=False), destbucket, 'ordertable.csv')        
+
+                  urllib.request.urlopen('https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/orderitem.csv')   #Provide URL
+                  s3.meta.client.upload_fileobj(http.request('GET', 'https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/orderitem.csv', preload_content=False), destbucket, 'orderitem.csv')        
+
+                  urllib.request.urlopen('https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/script.py')   #Provide URL
+                  s3.meta.client.upload_fileobj(http.request('GET', 'https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/script.py', preload_content=False), destbucket, 'script.py')              
+
+                  urllib.request.urlopen('https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/app.zip')   #Provide URL
+                  s3.meta.client.upload_fileobj(http.request('GET', 'https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/app.zip', preload_content=False), destbucket, 'app.zip')        
+
+                  urllib.request.urlopen('https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/layer.zip')   #Provide URL
+                  s3.meta.client.upload_fileobj(http.request('GET', 'https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/layer.zip', preload_content=False), destbucket, 'layer.zip')  
+
+                  urllib.request.urlopen('https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/tables.csv')   #Provide URL
+                  s3.meta.client.upload_fileobj(http.request('GET', 'https://aws-blogs-artifacts-public.s3.amazonaws.com/BDB-3690/tables.csv', preload_content=False), destbucket, 'tables.csv')  
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "CustomResourcePhysicalID") 
+                except s3.meta.client.exceptions.NoSuchBucket as nobucket:
+                  print("Bucket {} does not exist".format(nobucket.response['Error']['BucketName']))
+                except Exception as other_err:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, "CustomResourcePhysicalID")
+                  raise(other_err)  
+      Runtime: python3.8
+      Timeout: 300
+
+  UploadLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: UploadLambdaRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+        - PolicyName: UploadLambdaRoleExecutionRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - Effect: Allow
+                Action:
+                  - 's3:ListBucket'
+                Resource: !Sub '${ExportS3Bucket.Arn}'
+              - Effect: Allow
+                Action:
+                  - 's3:DeleteObject'
+                Resource: !Sub '${ExportS3Bucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                  - 's3:PutObjectAcl'
+                  - 's3:AbortMultipartUpload'
+                Resource: !Sub '${ExportS3Bucket.Arn}/*'
+
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'pub-subnet-1-${AWS::StackName}'
+
+  PublicSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'pub-subnet-3-${AWS::StackName}'
+
+  PrivateSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub 'priv-subnet-1-${AWS::StackName}'
+
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+
+  GatewayToInternet:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: GatewayToInternet
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  NatGateway:
+    Type: "AWS::EC2::NatGateway"
+    Properties:
+      AllocationId: !GetAtt NatPublicIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      
+ # PrivateNatGateway:
+ #   Type: "AWS::EC2::NatGateway"
+ #   Properties:
+ #     SubnetId: !Ref PrivateSubnet1
+
+  NatPublicIP:
+    Type: "AWS::EC2::EIP"
+    DependsOn: PubPrivateVPC
+    Properties:
+      Domain: vpc
+
+  PrivateRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+
+  PrivateRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: 10.0.4.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub 'priv-subnet-2-${AWS::StackName}'
+  RDSSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupDescription: Subnet for RDS
+      DBSubnetGroupName: rds
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS Postgres access through the VPC
+      VpcId:
+        !GetAtt PubPrivateVPC.VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 10.0.0.0/16
+
+  InboundRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt RDSSecurityGroup.GroupId
+      IpProtocol: -1
+      SourceSecurityGroupId: !GetAtt RDSSecurityGroup.GroupId
+          
+
+  RDSRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: RDSRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - rds.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+        - PolicyName: DownloadS3
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:*Object'
+                Resource: !Sub '${ExportS3Bucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - 's3:ListBucket'
+                Resource: !Sub '${ExportS3Bucket.Arn}'
+
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: 'Delete'
+    Properties:
+      AssociatedRoles:
+        - FeatureName: s3Import
+          RoleArn: !Sub '${RDSRole.Arn}'
+      DBName: "salesdb"
+      Engine: postgres
+      MasterUsername: !Sub ${Username}
+      DBInstanceClass: !Sub ${DBClass}
+      AllocatedStorage: !Sub ${DBAllocatedStorage}
+      MasterUserPassword: !Sub ${Password}
+      VPCSecurityGroups:
+      - !GetAtt RDSSecurityGroup.GroupId
+      DBSubnetGroupName:
+        Ref: RDSSubnetGroup
+
+  ExportS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      BucketName: !Sub "${AWS::AccountId}-stepfunction-redrive"
+
+  ExportS3BuckettPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ExportS3Bucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: 'GlueCrawler'
+            Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com   
+            Action:
+              - s3:GetBucketLocation
+              - s3:ListBucket
+              - s3:GetBucketAcl         
+            Resource: !Sub "${ExportS3Bucket.Arn}"
+            Condition:
+              ArnLike: 
+                'aws:SourceArn' : !GetAtt rAWSGlueCrawlerRole.Arn
+          - Sid: 'GlueCrawler2'
+            Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com   
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject     
+            Resource: !Sub "${ExportS3Bucket.Arn}/*"
+            Condition:
+              ArnLike: 
+                'aws:SourceArn' : !GetAtt rAWSGlueCrawlerRole.Arn
+  MyJob:
+    Type: AWS::Glue::Job
+    Properties:
+      GlueVersion: "3.0"
+      Command:
+        Name: glueetl
+        ScriptLocation: !Sub "s3://${ExportS3Bucket}/script.py"
+      DefaultArguments:
+        "--dbtable": ""
+        "--bucket" : !Ref ExportS3Bucket
+      ExecutionProperty:
+        MaxConcurrentRuns: 5
+      MaxRetries: 0
+      NumberOfWorkers: 2
+      WorkerType: "G.1X"
+      Name: ExportTableData
+      Role: !Ref rAWSGlueCrawlerRole
+      Connections:
+          Connections:
+             - "salesdbconnector"
+
+  GlueJobPolicy1:    
+    Type: AWS::IAM::Policy  
+    Properties:
+      PolicyName: ExportPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: 
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+            Resource: !Sub "${ExportS3Bucket.Arn}/*"
+      Roles: 
+        - !Ref rAWSGlueCrawlerRole
+ 
+  GlueJobPolicy2:    
+    Type: AWS::IAM::Policy  
+    Properties:
+      PolicyName: ExportPolicyBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: 
+              - s3:ListBucket
+            Resource: !Sub "${ExportS3Bucket.Arn}/*"
+      Roles: 
+        - !Ref rAWSGlueCrawlerRole
+
+  rGlueCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Role: !Ref rAWSGlueCrawlerRole
+      Description: Glue Crawler
+      SchemaChangePolicy:
+        UpdateBehavior: LOG
+      DatabaseName: salesdb
+      Targets:
+        JdbcTargets:
+          - ConnectionName: !Ref rGlueConnection
+            Path: '/salesdb/%'
+      Name: gluecrawler
+  rGlueConnection:
+    Type: AWS::Glue::Connection
+    Properties:
+      CatalogId: !Sub ${AWS::AccountId}
+      ConnectionInput: 
+        Description: "Connection to RDS instances"
+        ConnectionType: 'JDBC'
+        ConnectionProperties:
+          JDBC_CONNECTION_URL: !Sub 'jdbc:postgresql://${RDSInstance.Endpoint.Address}:${RDSInstance.Endpoint.Port}/salesdb'
+          USERNAME: !Sub '${Username}'
+          PASSWORD: !Sub '${Password}'
+          JDBC_DRIVER_CLASS_NAME: "org.postgresql.Driver"
+          JDBC_DRIVER_JAR_URI: !Sub 's3://${ExportS3Bucket}/postgresql-42.6.0.jar'             
+        Name: salesdbconnector
+        PhysicalConnectionRequirements:
+          AvailabilityZone: !GetAtt PrivateSubnet1.AvailabilityZone
+          SubnetId: !Ref PrivateSubnet1
+          SecurityGroupIdList: 
+            - !GetAtt RDSSecurityGroup.GroupId
+  rAWSGlueCrawlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "AWSGlueService-Crawler"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - glue.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns: 
+      - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+  
+  rAWSGlueCrawlerGDPolicy:    
+    Type: AWS::IAM::Policy  
+    Properties:
+      PolicyName: GlueJob
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: 
+              - s3:GetObject
+              - s3:PutObject
+              - s3:ListBucket
+              - s3:DeleteObject
+            Resource: !Sub "${ExportS3Bucket.Arn}/*"
+      Roles: 
+        - !Ref rAWSGlueCrawlerRole
+        
+  GlueJobPolicy3:    
+    Type: AWS::IAM::Policy  
+    Properties:
+      PolicyName: DeleteInterface
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: 
+              - ec2:DeleteNetworkInterface
+            Resource: "*"
+      Roles: 
+        - !Ref rAWSGlueCrawlerRole
+
+
+  stepfunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaPopulateDB.Arn
+      Action: lambda:InvokeFunction
+      Principal: states.amazonaws.com
+      SourceAccount: !Ref 'AWS::AccountId'
+      SourceArn: !GetAtt ExportTablesFromRDS.Arn
+
+  LambdaPopulateDB:
+    Type: AWS::Serverless::Function
+    DependsOn: LogBuckets
+    Properties:
+      CodeUri: 
+        Bucket: !Ref ExportS3Bucket
+        Key: "app.zip"
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.9
+      Timeout: 30
+      Environment:
+        Variables:
+          S3Bucket: !Ref ExportS3Bucket
+          DatabaseTable: !Ref rDynamoTableSession
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref rDynamoTableSession
+        - S3CrudPolicy:
+            BucketName: !Ref ExportS3Bucket
+
+  rDynamoTableSession:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+      - AttributeName: prospectID
+        AttributeType: S
+      - AttributeName: name
+        AttributeType: S
+      KeySchema:
+      - AttributeName: prospectID
+        KeyType: HASH
+      - AttributeName: name
+        KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: "KMS"
+
+  rAWSGlueDatabase: 
+    Type: AWS::Glue::Database
+    Properties: 
+      CatalogId: !Sub ${AWS::AccountId}
+      DatabaseInput:
+        Name: 'salesdb'
+        Description: 'Database to hold tables all sales related data'
+  
+Outputs:
+  LambdaFunction:
+    Value: !GetAtt LambdaPopulateDB.Arn
+    Description: LambdaPopulateDB ARN
+
+  DynamoTableSession:
+    Value: !GetAtt rDynamoTableSession.Arn
+    Description: DynamoDb Table 
+
+  StepFunctionStateMachine:
+    Value: !GetAtt ExportTablesFromRDS.Arn
+    Description: DynamoDb Table
+
+  S3Bucket:
+    Value: !GetAtt ExportS3Bucket.Arn
+    Description: S3 Bucket 
+
+  RDSDatabase:
+    Value: !GetAtt RDSInstance.DBInstanceArn
+    Description: RDS Database
