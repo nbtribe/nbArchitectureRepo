@@ -1,0 +1,1 @@
+This solution is a serverless genAI chatbot that users can use to reference company documentation.  Documents can be uploaded to an S3 bucket and will be indexed by the Kendra service. Users can then go to the  application UI  and ask questions about the company document.  

@@ -1,0 +1,155 @@
+Resources:    
+  ## Create S3 bucket for Documents
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled   
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - 's3:GetObject'
+            Effect: Allow
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref S3Bucket
+                - '/*'
+            Principal:
+              Service: "kendra.amazonaws.com"
+          
+      
+  #Create a different index
+  S3DocsKendraIndex:
+    Type: 'AWS::Kendra::Index'
+    Properties:
+      Name: !Join
+        - ''
+        - - !Ref 'AWS::StackName'
+          - '-S3-Index'
+      Edition: 'DEVELOPER_EDITION'
+      RoleArn: !GetAtt KendraIndexRole.Arn
+ 
+  ##Create the Role needed to create a Kendra Index
+  KendraIndexRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: kendra.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': 'Kendra'
+                Action:
+                  - 'cloudwatch:PutMetricData'
+              - Effect: Allow
+                Resource: '*'
+                Action: 'logs:DescribeLogGroups'
+              - Effect: Allow
+                Resource: !Sub
+                  - 'arn:aws:logs:${region}:${account}:log-group:/aws/kendra/*'
+                  - region: !Ref 'AWS::Region'
+                    account: !Ref 'AWS::AccountId'
+                Action: 'logs:CreateLogGroup'
+              - Effect: Allow
+                Resource: !Sub
+                  - 'arn:aws:logs:${region}:${account}:log-group:/aws/kendra/*:log-stream:*'
+                  - region: !Ref 'AWS::Region'
+                    account: !Ref 'AWS::AccountId'
+                Action: 
+                  - 'logs:DescribeLogStreams'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+          PolicyName: !Join
+            - ''
+            - - !Ref 'AWS::StackName'
+              - '-S3DocsKendraIndexPolicy'
+      RoleName: !Join
+        - ''
+        - - !Ref 'AWS::StackName'
+          - '-S3DocsKendraIndexRole'
+
+ 
+  
+  ##Create the Role needed to attach the Webcrawler Data Source
+  KendraS3DocsRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: kendra.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Resource: 
+                  - !GetAtt S3Bucket.Arn
+                  - !Join
+                    - ''
+                    - - !GetAtt S3Bucket.Arn
+                      - '/*'
+                Action:
+                  - 's3:GetObject'
+                  - 's3:ListBucket'
+          PolicyName: !Join
+            - ''
+            - - !Ref 'AWS::StackName'
+              - '-S3DocsDSPolicy'
+      RoleName: !Join
+        - ''
+        - - !Ref 'AWS::StackName'
+          - '-S3DocsRole'
+    
+  #Docs Data Source
+  S3DataSource:
+    Type: 'AWS::Kendra::DataSource'
+    Properties: 
+      IndexId: !Ref S3DocsKendraIndex
+      Name: 'S3DocsDataSource'
+      Type: 'S3'
+      DataSourceConfiguration:
+        S3Configuration:
+          BucketName: !Ref S3Bucket
+          InclusionPrefixes: 
+            - sample-documents/
+      RoleArn: !GetAtt KendraS3DocsRole.Arn
+
+Outputs:
+  S3BucketName:
+    Value: !Ref S3Bucket
+  KendraIndexID:
+    Value: !Ref S3DocsKendraIndex
+  AWSRegion:
+    Value: !Ref 'AWS::Region'
