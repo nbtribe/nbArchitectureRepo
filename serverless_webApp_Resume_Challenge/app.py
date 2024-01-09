@@ -3,11 +3,11 @@ import os
 
 import aws_cdk as cdk
 
-from serverless_webapp.serverless_webapp_stack import ServerlessWebappStack
+from serverless_web_app_resume_challenge.serverless_web_app_resume_challenge_stack import ServerlessWebAppResumeChallengeStack
 
 
 app = cdk.App()
-ServerlessWebappStack(app, "ServerlessWebappStack",
+ServerlessWebAppResumeChallengeStack(app, "ServerlessWebAppResumeChallengeStack",
     # If you don't specify 'env', this stack will be environment-agnostic.
     # Account/Region-dependent features and context lookups will not work,
     # but a single synthesized template can be deployed anywhere.

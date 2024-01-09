@@ -195,7 +195,7 @@ class ServerlessLawncareAppStack(Stack):
         )
         
         # November
-        schedule = scheduler.CfnSchedule(self, 'November Schedule',
+        schedule = scheduler.CfnSchedule(self, 'November Schedule',api
             flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(
                 mode="OFF"
             ),

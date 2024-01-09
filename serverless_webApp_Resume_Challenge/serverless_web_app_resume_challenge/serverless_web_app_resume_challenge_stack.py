@@ -13,7 +13,7 @@ from aws_cdk import (
 )
 from constructs import Construct
 
-class ServerlessWebappStack(Stack):
+class ServerlessWebAppResumeChallengeStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -23,7 +23,6 @@ class ServerlessWebappStack(Stack):
             "WebApp-Bucket",
             removal_policy=RemovalPolicy.DESTROY,
             auto_delete_objects=True,
-            # encryption=s3.BucketEncryption.KMS,
             enforce_ssl=True,
             versioned=True,
             
@@ -106,4 +105,3 @@ class ServerlessWebappStack(Stack):
 
 
         
-
