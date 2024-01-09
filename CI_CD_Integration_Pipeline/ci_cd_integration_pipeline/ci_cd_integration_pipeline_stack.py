@@ -266,7 +266,6 @@ class CiCdIntegrationPipelineStack(Stack):
         
         ecrRepo.grant_pull_push(project.role)
 
-        # project.add_to_role_policy(iam.PolicyStatement()
 
         CfnOutput(self, "image", value=f"{ecrRepo.repository_uri}:latest")
         CfnOutput(self, "repo_name", value=f"{ecrRepo.repository_name}")

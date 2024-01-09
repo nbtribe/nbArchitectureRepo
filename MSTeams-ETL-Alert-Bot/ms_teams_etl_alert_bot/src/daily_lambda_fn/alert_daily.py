@@ -87,7 +87,7 @@ def make_hyperlink(val):
 # send message to teams
 def send_messages(msg):
     # Teams webhook URL
-    webhook_url = "https://associationanalytics.webhook.office.com/webhookb2/6c00b43f-a297-4eca-b9b0-60fcea37f8cd@215dc152-06d6-47a5-a752-b4a006e83464/IncomingWebhook/78e542a59c904543b4e08fca09845308/a0d7e604-62a5-4c60-9be9-0b9c725a5bd4"
+    webhook_url = "[MS_Teams_WebHook]"
 
     # Create a new message
     message = pymsteams.connectorcard(webhook_url)
