@@ -21,21 +21,6 @@ class DataAnalyticsCaptureClickstreamSolutionStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
-
-        # # The code that defines your stack goes here
-        # # IAM plolicy
-        # s3_put_firehose_policy = iam.PolicyStatement(
-        #     effect=iam.Effect.ALLOW,
-        #     actions=["firehose:PutRecord"],
-        #     resources=["*"],
-        #     sid="VisualEditor0"
-        # )
-        # IAM Role
-        # s3_put_firehose_role = iam.Role(self, "s3_put_firehose_role",
-        #                                 assumed_by= iam.ServicePrincipal("firehose.amazonaws.com"),
-        #      
-        #                         )
-
         # KenesisFirehose_role
         kenesis_firehose_role = iam.Role(self, "kenesis_firehose_role",
                                         #  assumed_by= iam.ServicePrincipal(["firehose.amazonaws.com","lambda.amazonaws.com"]),
@@ -67,7 +52,7 @@ class DataAnalyticsCaptureClickstreamSolutionStack(Stack):
                               encryption=s3.BucketEncryption.S3_MANAGED,
                               block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
         )
-
+        # s3 Bucket Policy for Kinesis to put a record
         bucket_policy = iam.PolicyStatement( 
             effect=iam.Effect.ALLOW,
             principals=[iam.ArnPrincipal(kenesis_firehose_role.role_arn)],
@@ -94,7 +79,6 @@ class DataAnalyticsCaptureClickstreamSolutionStack(Stack):
                                             code=lambda_.Code.from_asset("lambda/process_fn"),
                                             environment={"BUCKET_NAME": s3_bucket.bucket_name},
                                             timeout=Duration.seconds(10)
-                                        
                                             )
         
         # resource based policy Kenisis policy to call the lambda
@@ -106,10 +90,6 @@ class DataAnalyticsCaptureClickstreamSolutionStack(Stack):
             sid="InvokeLambda"
         )
           
-
-
-
-
         kenesis_policy = iam.PolicyStatement(
             effect=iam.Effect.ALLOW,
             actions=["lambda:InvokeFunction"],
@@ -195,9 +175,6 @@ class DataAnalyticsCaptureClickstreamSolutionStack(Stack):
 
                                                                 #  NEED TO ADD the METHOD RESPONSE of 200 . 
                                                                  )],
-                                                            
-                                                            
-
 
                                     )
                                     )
