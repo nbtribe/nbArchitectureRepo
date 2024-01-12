@@ -33,11 +33,17 @@ class DataAnalyticsCaptureClickstreamSolutionStack(Stack):
         # IAM Role
         # s3_put_firehose_role = iam.Role(self, "s3_put_firehose_role",
         #                                 assumed_by= iam.ServicePrincipal("firehose.amazonaws.com"),
-        #                              )
+        #      
+        #                         )
+
         # KenesisFirehose_role
         kenesis_firehose_role = iam.Role(self, "kenesis_firehose_role",
-                                         assumed_by= iam.ServicePrincipal("firehose.amazonaws.com"),
+                                        #  assumed_by= iam.ServicePrincipal(["firehose.amazonaws.com","lambda.amazonaws.com"]),
+                                         assumed_by= iam.CompositePrincipal(iam.ServicePrincipal("firehose.amazonaws.com"),
+                                                                            iam.ServicePrincipal("lambda.amazonaws.com"),
                                         )
+        )
+
         # IAM policy
         apigateway_firehose_policy = iam.PolicyStatement(
             effect=iam.Effect.ALLOW,
@@ -80,16 +86,39 @@ class DataAnalyticsCaptureClickstreamSolutionStack(Stack):
         s3_bucket.add_to_resource_policy(bucket_policy)
     
 
-
-        lambda_function = lambda_.Function(self, "ClickstreamLambda",
+        # Lambda FN
+        # Need to add cloudwatch Logs to this role!!!
+        lambda_function = lambda_.Function(self, "ClickstreamLambda-Transform",
                                             runtime=lambda_.Runtime.PYTHON_3_9,
                                             handler="process.lambda_handler",
                                             code=lambda_.Code.from_asset("lambda/process_fn"),
                                             environment={"BUCKET_NAME": s3_bucket.bucket_name},
                                             timeout=Duration.seconds(10)
+                                        
                                             )
         
-        
+        # resource based policy Kenisis policy to call the lambda
+        kenesis_policy = iam.PolicyStatement(
+            principals=[iam.ServicePrincipal("kinesis.amazonaws.com")],
+            effect=iam.Effect.ALLOW,
+            actions=["lambda:InvokeFunction"],
+            resources=[lambda_function.function_arn],
+            sid="InvokeLambda"
+        )
+          
+
+
+
+
+        kenesis_policy = iam.PolicyStatement(
+            effect=iam.Effect.ALLOW,
+            actions=["lambda:InvokeFunction"],
+            resources=[lambda_function.function_arn],
+            sid="FirehoseAccessLambda"
+        )
+        # Add policy for firehose to invoke lambda to the kinesis role
+        kenesis_firehose_role.add_to_policy(kenesis_policy)
+
         kinesis_ds = firehose.CfnDeliveryStream(self, "DeliveryStream",
                                                 delivery_stream_name="nb-arch-clickstream-DS",
                                                 delivery_stream_type="DirectPut",
@@ -149,7 +178,7 @@ class DataAnalyticsCaptureClickstreamSolutionStack(Stack):
                                     description="Clickstream API",
                                     
                                     )
-        api_gateway.root.add_resource("poc").add_method("POST",
+        api_gateway.root.add_resource("sln").add_method("POST",
                                                         apigw.AwsIntegration(service="firehose",
                                                          action="PutRecord",
                                                          integration_http_method="POST",
@@ -160,18 +189,11 @@ class DataAnalyticsCaptureClickstreamSolutionStack(Stack):
                                                             
                                                              credentials_role=apigateway_firehose_role,
                                                              passthrough_behavior= apigw.PassthroughBehavior.WHEN_NO_TEMPLATES,
-                                                            #  request_templates={"application/json": "{\"DeliveryStreamName\":\"nb-arch-clickstream-DS\", \"Record\":{\"Data\":\"$input.body\"}}"},
-                                                            # request_templates={"application/json": {"DeliveryStreamName": "nb-arch-clickstream-DS",
-                                                            #                    "Record": {
-                                                            #                             "Data": "$util.base64Encode($util.escapeJavaScript($input.json('$')).replace('\', ''))"
-                                                            #                         }}
-                                                            # },
-                                                            # request_templates={"application/json": "{\"DeliveryStreamName\":\"nb-arch-clickstream-DS\", \"Record\":{\"Data\":\"$util.base64Encode($util.escapeJavaScript($input.json('$')).replace('\', ''))}}"},
                                                              request_templates={"application/json": "{\"DeliveryStreamName\":\"nb-arch-clickstream-DS\", \"Record\":{\"Data\":\"$util.base64Encode($input.json('$'))\"}}"},
                                                              integration_responses=[apigw.IntegrationResponse(
                                                                  status_code="200",
 
-                                                                #  response_templates={"application/json": "OK"}
+                                                                #  NEED TO ADD the METHOD RESPONSE of 200 . 
                                                                  )],
                                                             
                                                             
