@@ -1,0 +1,1 @@
+aws ssm put-parameter --name "test-parameter" --value "{}" --type String
