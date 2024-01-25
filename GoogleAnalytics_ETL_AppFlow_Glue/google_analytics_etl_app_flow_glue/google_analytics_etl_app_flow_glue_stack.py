@@ -23,8 +23,8 @@ class GoogleAnalyticsEtlAppFlowGlueStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
-        
-        # Manually create Appflow that will serve as out extract piece
+
+        # Manually create Appflow that will serve as out extract piece of the project
 
         #Create  S3 bucket for raw data
         bucket_raw_data  = s3.Bucket(
