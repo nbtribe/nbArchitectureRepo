@@ -1,0 +1,245 @@
+{
+  "version": "36.0.0",
+  "artifacts": {
+    "GoogleAnalyticsEtlAppFlowGlueStack.assets": {
+      "type": "cdk:asset-manifest",
+      "properties": {
+        "file": "GoogleAnalyticsEtlAppFlowGlueStack.assets.json",
+        "requiresBootstrapStackVersion": 6,
+        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
+      }
+    },
+    "GoogleAnalyticsEtlAppFlowGlueStack": {
+      "type": "aws:cloudformation:stack",
+      "environment": "aws://unknown-account/unknown-region",
+      "properties": {
+        "templateFile": "GoogleAnalyticsEtlAppFlowGlueStack.template.json",
+        "terminationProtection": false,
+        "validateOnSynth": false,
+        "assumeRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-deploy-role-${AWS::AccountId}-${AWS::Region}",
+        "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-cfn-exec-role-${AWS::AccountId}-${AWS::Region}",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}/2f9734581f620b9b660b627af652f57d3a2d7cf7881f67b490155f73cb3a2aec.json",
+        "requiresBootstrapStackVersion": 6,
+        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
+        "additionalDependencies": [
+          "GoogleAnalyticsEtlAppFlowGlueStack.assets"
+        ],
+        "lookupRole": {
+          "arn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-lookup-role-${AWS::AccountId}-${AWS::Region}",
+          "requiresBootstrapStackVersion": 8,
+          "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
+        }
+      },
+      "dependencies": [
+        "GoogleAnalyticsEtlAppFlowGlueStack.assets"
+      ],
+      "metadata": {
+        "/GoogleAnalyticsEtlAppFlowGlueStack/S3Bucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3Bucket07682993"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/S3Bucket/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3BucketPolicyF560589A"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/S3Bucket/AutoDeleteObjectsCustomResource/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3BucketAutoDeleteObjectsCustomResource7735AB63"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/S3Bucket/Notifications/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3BucketNotifications58B5AD06"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/Custom::S3AutoDeleteObjectsCustomResourceProvider/Role": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/Custom::S3AutoDeleteObjectsCustomResourceProvider/Handler": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/S3BucketProcessed/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3BucketProcessedA13DD30D"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/S3BucketProcessed/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3BucketProcessedPolicy823151A8"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/S3BucketProcessed/AutoDeleteObjectsCustomResource/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3BucketProcessedAutoDeleteObjectsCustomResourceA3C8FEAA"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/GlueAssetsBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "GlueAssetsBucketB368C580"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/GlueAssetsBucket/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "GlueAssetsBucketPolicy2A00B29D"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/GlueAssetsBucket/AutoDeleteObjectsCustomResource/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "GlueAssetsBucketAutoDeleteObjectsCustomResourceD7901A22"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/GlueJobRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "GlueJobRoleF1B69418"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/GlueJobRole/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "GlueJobRoleDefaultPolicy94EFA0CF"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/DeployGlue Scrpts/AwsCliLayer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeployGlueScrptsAwsCliLayer7FD8A95D"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/DeployGlue Scrpts/CustomResource/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeployGlueScrptsCustomResource75359328"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRole89A01265"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRoleDefaultPolicy88902FDF"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C81C01536"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/SQSQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SQSQueue7674CD17"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/SQSQueue/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SQSQueuePolicy4691EEED"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleDefaultPolicy2CF63D36"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "BucketNotificationsHandler050a0587b7544547bf325f094a3db8347ECC3691"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/GlueJob": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "GlueJob"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/LambdaRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaRole3A44B857"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/LambdaRole/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaRoleDefaultPolicy75625A82"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/GlueHandler/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "GlueHandler0AF999D6"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/GlueHandler/SqsEventSource:GoogleAnalyticsEtlAppFlowGlueStackSQSQueueD2F521F5/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "GlueHandlerSqsEventSourceGoogleAnalyticsEtlAppFlowGlueStackSQSQueueD2F521F58117DE1C"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/CDKMetadata/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CDKMetadata"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/CDKMetadata/Condition": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CDKMetadataAvailable"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/BootstrapVersion": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "BootstrapVersion"
+          }
+        ],
+        "/GoogleAnalyticsEtlAppFlowGlueStack/CheckBootstrapVersion": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CheckBootstrapVersion"
+          }
+        ]
+      },
+      "displayName": "GoogleAnalyticsEtlAppFlowGlueStack"
+    },
+    "Tree": {
+      "type": "cdk:tree",
+      "properties": {
+        "file": "tree.json"
+      }
+    }
+  }
+}
