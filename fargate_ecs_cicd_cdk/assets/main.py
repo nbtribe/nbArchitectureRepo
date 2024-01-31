@@ -1,2 +1,0 @@
-print("ApplicationStarting...")
-print("ApplicationEnding...")

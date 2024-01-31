@@ -1,8 +1,0 @@
-﻿aiobotocore
-aiohttp
-aioitertools
-aiosignal
-boto3
-botocore
-polars
-pyarrow
