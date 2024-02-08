@@ -185,6 +185,10 @@ class EcsFargateCicdCdkStack(Stack):
             oauth_token=SecretValue.secrets_manager(githubAccessTokenString),
             output=sourceOutput,
         )
+        manualApprovalAction = codepipeline_actions.ManualApprovalAction(
+            action_name="Approve_Build",
+            additional_information="Approve to Proceed with Deployment",
+        )
 
         buildAction = codepipeline_actions.CodeBuildAction(
             action_name="CodeBuild",
@@ -193,10 +197,7 @@ class EcsFargateCicdCdkStack(Stack):
             outputs=[buildOutput],
         )
 
-        manualApprovalAction = codepipeline_actions.ManualApprovalAction(
-            action_name="Approve_Build",
-            additional_information="Approve to Proceed with Deployment",
-        )
+
 
 
         # Pipeline Stages
@@ -209,11 +210,11 @@ class EcsFargateCicdCdkStack(Stack):
                 ),
                 codepipeline.StageProps(
                     stage_name="Build",
-                    actions=[buildAction],
+                    actions=[manualApprovalAction],
                 ),
                 codepipeline.StageProps(
                     stage_name="Approve_Build",
-                    actions=[manualApprovalAction],
+                    actions=[buildAction],
                 )
 
             ],
@@ -235,3 +236,5 @@ class EcsFargateCicdCdkStack(Stack):
         CfnOutput(self, "ECRRepoName", value=f"{ecrRepo.repository_uri}:latest")
         CfnOutput(self, "Docker UserName", value=DOCKER_USERNAME.value_as_string)
         CfnOutput(self, "Docker Password", value=DOCKER_PASSWORD.value_as_string)
+
+
