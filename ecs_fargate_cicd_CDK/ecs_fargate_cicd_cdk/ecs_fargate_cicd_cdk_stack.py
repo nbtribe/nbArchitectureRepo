@@ -13,7 +13,8 @@ from aws_cdk import (
     SecretValue,
     RemovalPolicy,
     CfnOutput,
-    aws_logs as logs
+    aws_logs as logs,
+    aws_codestarconnections as codestarconnections
 )
 from constructs import Construct
 
@@ -26,6 +27,14 @@ class EcsFargateCicdCdkStack(Stack):
 
         ACCOUNT = self.account
         REGION = self.region
+
+
+        sourceConnection = codestarconnections.CfnConnection(self, 'SourceConnection',
+            connection_name = 'Github_cdk_conn',
+            provider_type = 'GitHub',
+            )
+                
+
 
 
         DOCKER_USERNAME = CfnParameter(self, "DockerUsername", type="String",
@@ -48,9 +57,9 @@ class EcsFargateCicdCdkStack(Stack):
                                       description="GitHub User Name to use for the pipeline",
         )
 
-        githubAccessToken = CfnParameter(self, "GitHubAccessToken", type="String",
-                                         description="GitHub Access Token to use for the pipeline",
-                                         default="/githubAccessToken")
+        # githubAccessToken = CfnParameter(self, "GitHubAccessToken", type="String",
+        #                                  description="GitHub Access Token to use for the pipeline",
+        #                                  default="/githubAccessToken")
         
         
         ecrRepo = ecr.Repository(self, "EcrRepo",
@@ -175,16 +184,27 @@ class EcsFargateCicdCdkStack(Stack):
         sourceOutput = codepipeline.Artifact()
         buildOutput = codepipeline.Artifact()
         
-        githubAccessTokenString = githubAccessToken.value_as_string
+        # githubAccessTokenString = githubAccessToken.value_as_string
 
-        sourceAction = codepipeline_actions.GitHubSourceAction(
+        # sourceAction = codepipeline_actions.GitHubSourceAction(
+        #     action_name="Github_Source",
+        #     owner=githubUserName.value_as_string,
+        #     repo=githubRepo.value_as_string,
+        #     branch="main",
+        #     oauth_token=SecretValue.secrets_manager(githubAccessTokenString),
+        #     output=sourceOutput,
+        # )
+        sourceAction = codepipeline_actions.CodeStarConnectionsSourceAction(
             action_name="Github_Source",
-            owner=githubUserName.value_as_string,
-            repo=githubRepo.value_as_string,
+            connection_arn=sourceConnection.attr_connection_arn,
             branch="main",
-            oauth_token=SecretValue.secrets_manager(githubAccessTokenString),
             output=sourceOutput,
+            owner = githubUserName.value_as_string,
+            repo = githubRepo.value_as_string,
+
         )
+
+
         manualApprovalAction = codepipeline_actions.ManualApprovalAction(
             action_name="Approve_Build",
             additional_information="Approve to Proceed with Deployment",
@@ -197,9 +217,6 @@ class EcsFargateCicdCdkStack(Stack):
             outputs=[buildOutput],
         )
 
-
-
-
         # Pipeline Stages
         pipeline = codepipeline.Pipeline(
             self, "Pipeline",
@@ -208,14 +225,16 @@ class EcsFargateCicdCdkStack(Stack):
                     stage_name="Source",
                     actions=[sourceAction],
                 ),
+
                 codepipeline.StageProps(
-                    stage_name="Build",
+                    stage_name="Approve_Build",
                     actions=[manualApprovalAction],
                 ),
                 codepipeline.StageProps(
-                    stage_name="Approve_Build",
+                    stage_name="Build",
                     actions=[buildAction],
                 )
+
 
             ],
         )
@@ -232,7 +251,7 @@ class EcsFargateCicdCdkStack(Stack):
                     "ecr:getdownloadurlforlayer"]
                     )
                     )
-        
+        CfnOutput(self, "SourceConnection1", value=sourceConnection.attr_connection_arn)
         CfnOutput(self, "ECRRepoName", value=f"{ecrRepo.repository_uri}:latest")
         CfnOutput(self, "Docker UserName", value=DOCKER_USERNAME.value_as_string)
         CfnOutput(self, "Docker Password", value=DOCKER_PASSWORD.value_as_string)
