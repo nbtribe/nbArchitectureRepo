@@ -25,6 +25,7 @@ class EcsFargateCicdCdkStack(Stack):
 
         # execute line = cdk deploy --parameters GitHubUserName={gh_username} --parameters DockerUsername={dckr_username} --parameters DockerPassword={dckr_pwd}
 
+
         ACCOUNT = self.account
         REGION = self.region
 
@@ -34,8 +35,6 @@ class EcsFargateCicdCdkStack(Stack):
             provider_type = 'GitHub',
             )
                 
-
-
 
         DOCKER_USERNAME = CfnParameter(self, "DockerUsername", type="String",
                                        description="Docker Username to use for the pipeline",)
@@ -51,7 +50,7 @@ class EcsFargateCicdCdkStack(Stack):
 
         githubRepo = CfnParameter(self, "GitHubRepo", type="String",
                                   description="GitHub Repo to use for the pipeline",
-                                  default="test_extract")
+                                  default="test_extract_2")
         
         githubUserName = CfnParameter(self, "GitHubUserName", type="String",
                                       description="GitHub User Name to use for the pipeline",
@@ -148,15 +147,17 @@ class EcsFargateCicdCdkStack(Stack):
 
             owner=githubUserName.value_as_string,
             repo=githubRepo.value_as_string,
-            webhook=True,
-            webhook_filters=[
-                            codebuild.FilterGroup.in_event_of(codebuild.EventAction.PUSH).and_branch_is("main")
-                ]
+            branch_or_ref="main",
+            # webhook=True,
+            # webhook_filters=[
+            #                 codebuild.FilterGroup.in_event_of(codebuild.EventAction.PUSH).and_branch_is("main")
+            #     ]
         )
+
 
         project = codebuild.Project(
             self, "CodeBuild_Project",
-            project_name=f"{source_system}_pipeline",
+            project_name=f"""{self.stack_name}-BuildProject""",
             source=gitHubSource,
             environment=codebuild.BuildEnvironment(
                 build_image=codebuild.LinuxBuildImage.STANDARD_4_0,
@@ -173,7 +174,7 @@ class EcsFargateCicdCdkStack(Stack):
 
 
             },
-            badge=True,
+            # badge=True,
             build_spec=codebuild.BuildSpec.from_asset("./assets/buildspec.yml")
         )
 
@@ -184,16 +185,7 @@ class EcsFargateCicdCdkStack(Stack):
         sourceOutput = codepipeline.Artifact()
         buildOutput = codepipeline.Artifact()
         
-        # githubAccessTokenString = githubAccessToken.value_as_string
 
-        # sourceAction = codepipeline_actions.GitHubSourceAction(
-        #     action_name="Github_Source",
-        #     owner=githubUserName.value_as_string,
-        #     repo=githubRepo.value_as_string,
-        #     branch="main",
-        #     oauth_token=SecretValue.secrets_manager(githubAccessTokenString),
-        #     output=sourceOutput,
-        # )
         sourceAction = codepipeline_actions.CodeStarConnectionsSourceAction(
             action_name="Github_Source",
             connection_arn=sourceConnection.attr_connection_arn,
@@ -234,8 +226,6 @@ class EcsFargateCicdCdkStack(Stack):
                     stage_name="Build",
                     actions=[buildAction],
                 )
-
-
             ],
         )
 
@@ -255,5 +245,6 @@ class EcsFargateCicdCdkStack(Stack):
         CfnOutput(self, "ECRRepoName", value=f"{ecrRepo.repository_uri}:latest")
         CfnOutput(self, "Docker UserName", value=DOCKER_USERNAME.value_as_string)
         CfnOutput(self, "Docker Password", value=DOCKER_PASSWORD.value_as_string)
+        CfnOutput(self, "GithubRepo", value= githubRepo.value_as_string)
 
 
