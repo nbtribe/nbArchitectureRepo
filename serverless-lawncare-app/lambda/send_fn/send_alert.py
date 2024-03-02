@@ -10,6 +10,9 @@ def lambda_handler(event, context):
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
     logger.info("request: " + json.dumps(event))
+    a = json.dumps(event)
+    result = json.loads(a)
+    notification = result["message"]
 
     topic_arn = os.environ.get('SNS_TOPIC_ARN')
 
@@ -18,7 +21,8 @@ def lambda_handler(event, context):
     try:
         sent_message = sns_client.publish(
             TargetArn=topic_arn,
-            Message=json.dumps({'default': json.dumps(event)})
+            # Message=json.dumps({'default': json.dumps(event)})
+            Message=notification
         )
         
     
